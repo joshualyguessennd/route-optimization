@@ -59,3 +59,54 @@ export interface RouteRequest {
       token: string;
     } | null;
   }
+
+  export interface QuoteRequest {
+    fromChainId: number;
+    toChainId: number;
+    fromTokenAddress: string;
+    toTokenAddress: string;
+    fromAmount: string;
+    userAddress: string;
+    singleTxOnly?: boolean;
+  }
+
+  export interface SupportedChain {
+    chainId: number;
+    name: string;
+    icon: string;
+    currency: string;
+  }
+
+  export interface TokenInfo {
+    address: string;
+    symbol: string;
+    decimals: number;
+    chainId: number;
+    name: string;
+    icon: string;
+  }
+
+  export interface QuoteResponse {
+    success: boolean;
+    result: {
+      routes: Array<{
+        userTxs: UserTransaction[];
+        toAmount: string;
+        fromAmount: string;
+        totalGasFeesInUsd: string;
+        estimatedTimeInSeconds: number;
+      }>;
+    };
+  }
+
+  export class BungeeApiError extends Error {
+    constructor(
+      message: string,
+      public status: number,
+      public code?: string
+    ) {
+      super(message);
+      this.name = 'BungeeApiError';
+    }
+  }
+  
