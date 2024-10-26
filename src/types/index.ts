@@ -131,4 +131,42 @@ export interface RouteRequest {
     balances: TokenBalance[];
     timestamp: number;
   }
+
+  export interface RouteOptimization {
+    success: boolean;
+    routes: OptimizedRoute[];
+    targetChain: string;
+    requestedAmount: string;
+    timestamp: number;
+  }
+
+  export interface RouteStep {
+    fromChain: string;
+    toChain: string;
+    amount: string;
+    fee: string;
+    estimatedTime: number;
+    protocol: string;
+  }
+
+  export interface OptimizedRoute {
+    steps: RouteStep[];
+    totalFee: string;
+    totalTime: number;
+    totalAmount: string;
+    sourceChains: string[];  // Chains we're sourcing from
+  }
+
+  export interface FeeEstimate {
+    fee: string;
+    estimatedTime: number;
+    protocol: string;
+  }
+  
+  export interface ChainPair {
+    fromChain: string;
+    toChain: string;
+  }
+
+
   
