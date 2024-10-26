@@ -7,6 +7,7 @@ import {
   OptimizedRoute,
   RouteStep,
 } from '../types';
+import { CHAIN_CONFIG } from '../config/constants';
 export class RouteOptimizer {
     private readonly MAX_SPLITS = 3;
     private readonly MAX_ROUTES = 3;
@@ -14,7 +15,8 @@ export class RouteOptimizer {
   
     constructor(
       private bungeeService: any,
-      private balanceService: any    ) {}
+      private balanceService: any,
+    private cacheService: any    ) {}
   
     async findOptimalRoutes(
       targetChain: string,
@@ -154,8 +156,8 @@ export class RouteOptimizer {
             const quote = await this.bungeeService.getQuote({
               fromChainId: source.chainId,
               toChainId: targetChainId,
-              fromTokenAddress: tokenAddress,
-              toTokenAddress: tokenAddress,
+              fromTokenAddress: CHAIN_CONFIG[source.chainId as keyof typeof CHAIN_CONFIG].usdc,
+              toTokenAddress: CHAIN_CONFIG[targetChainId as keyof typeof CHAIN_CONFIG].usdc,
               fromAmount: amountInWei,
               userAddress
             });
@@ -251,8 +253,8 @@ export class RouteOptimizer {
             const quote = await this.bungeeService.getQuote({
               fromChainId: source.chainId,
               toChainId: targetChainId,
-              fromTokenAddress: tokenAddress,
-              toTokenAddress: tokenAddress,
+              fromTokenAddress: CHAIN_CONFIG[source.chainId as keyof typeof CHAIN_CONFIG].usdc,
+              toTokenAddress: CHAIN_CONFIG[targetChainId as keyof typeof CHAIN_CONFIG].usdc,
               fromAmount: amountInWei,
               userAddress
             });
