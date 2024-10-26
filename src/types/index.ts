@@ -109,4 +109,26 @@ export interface RouteRequest {
       this.name = 'BungeeApiError';
     }
   }
+
+  export interface ChainConfig {
+    chainId: number;
+    name: string;
+    rpcUrl: string;
+    contracts: {
+      usdc: string;
+    };
+  }
+  
+  export interface TokenBalance {
+    chainId: number;
+    chainName: string;
+    balance: string;    
+    formatted: string;
+  }
+  
+  export interface BalanceResponse {
+    success: boolean;
+    balances: TokenBalance[];
+    timestamp: number;
+  }
   
