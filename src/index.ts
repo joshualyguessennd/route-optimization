@@ -19,7 +19,7 @@ const app = new Elysia()
     } catch (error) {
       return {
         status: 'error',
-        error: error.message
+        error: (error as Error).message
       };
     }
   })
