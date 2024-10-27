@@ -1,334 +1,246 @@
 // src/services/RouteOptimizer.ts
-
-import { formatUnits, parseUnits } from 'ethers';
-import { 
-  TokenBalance, 
-  RouteOptimization, 
-  OptimizedRoute,
-  RouteStep,
+import {
+    TokenBalance,
+    RouteOptimization,
+    OptimizedRoute,
 } from '../types';
-import { CHAIN_CONFIG } from '../config/constants';
 export class RouteOptimizer {
     private readonly MAX_SPLITS = 3;
     private readonly MAX_ROUTES = 3;
     private readonly USDC_DECIMALS = 6;
-  
+
     constructor(
-      private bungeeService: any,
-      private balanceService: any,
-    private cacheService: any    ) {}
-  
+        private bungeeService: any,
+        private balanceService: any,
+        private cacheService: any) { }
+
+    // src/services/RouteOptimizer.ts
+
     async findOptimalRoutes(
-      targetChain: string,
-      requiredAmount: string,
-      tokenAddress: string,
-      userAddress: string
+        targetChain: string,
+        requiredAmount: string,
+        tokenAddress: string,
+        userAddress: string
     ): Promise<RouteOptimization> {
-      try {
-        console.log('\n🔍 Starting route optimization...');
-        
-        // Get all balances first
-        const balances = await this.balanceService.getAllBalances(userAddress);
-        console.log('Available balances:', balances);
-  
-        const targetChainId = parseInt(targetChain);
-        const requiredAmountNum = parseFloat(requiredAmount);
-  
-        // Find target chain balance
-        const targetBalance = balances.balances.find(b => b.chainId === targetChainId);
-        const targetBalanceNum = targetBalance ? parseFloat(targetBalance.formatted) : 0;
-  
-        console.log('Balance check:', {
-          required: requiredAmountNum,
-          targetChainBalance: targetBalanceNum
-        });
-  
-        // Check if we already have enough balance
-        if (targetBalanceNum >= requiredAmountNum) {
-          return {
-            success: true,
-            routes: [],
-            targetChain,
-            requestedAmount: requiredAmount,
-            timestamp: Date.now()
-          };
-        }
-  
-        // Calculate how much more we need
-        const neededAmount = requiredAmountNum - targetBalanceNum;
-        console.log('Need to source:', neededAmount);
-  
-        // Check if we have enough total balance
-        const totalBalance = balances.balances.reduce(
-          (sum: number, b: TokenBalance) => sum + parseFloat(b.formatted),
-          0
-        );
-  
-        if (totalBalance < requiredAmountNum) {
-          throw new Error(
-            `Insufficient total balance. Have: ${totalBalance}, Need: ${requiredAmountNum}`
-          );
-        }
-  
-        // Get all possible routes
-        const routes = await this.findRoutes(
-          targetChainId,
-          neededAmount.toString(),
-          tokenAddress,
-          userAddress,
-          balances.balances
-        );
-  
-        return {
-          success: true,
-          routes: routes.slice(0, this.MAX_ROUTES),
-          targetChain,
-          requestedAmount: requiredAmount,
-          timestamp: Date.now()
-        };
-  
-      } catch (error) {
-        console.error('Error in findOptimalRoutes:', error);
-        throw error;
-      }
-    }
-  
-    private async findRoutes(
-      targetChainId: number,
-      amount: string,
-      tokenAddress: string,
-      userAddress: string,
-      balances: TokenBalance[]
-    ): Promise<OptimizedRoute[]> {
-      const routes: OptimizedRoute[] = [];
-      const amountNum = parseFloat(amount);
-  
-      // Get usable source chains (excluding target chain)
-      const sourceChains = balances.filter(
-        b => b.chainId !== targetChainId && parseFloat(b.formatted) > 0
-      );
-  
-      console.log('Available source chains:', 
-        sourceChains.map(c => `${c.chainName}: ${c.formatted}`)
-      );
-  
-      // Try single-chain routes first
-      await this.findSingleChainRoutes(
-        routes,
-        sourceChains,
-        targetChainId,
-        amount,
-        tokenAddress,
-        userAddress
-      );
-  
-      // If we need more routes, try multi-chain
-      if (routes.length < this.MAX_ROUTES) {
-        await this.findMultiChainRoutes(
-          routes,
-          sourceChains,
-          targetChainId,
-          amount,
-          tokenAddress,
-          userAddress
-        );
-      }
-  
-      // Sort routes by efficiency (fee + time)
-      return this.sortRoutes(routes);
-    }
-  
-    private async findSingleChainRoutes(
-      routes: OptimizedRoute[],
-      sourceChains: TokenBalance[],
-      targetChainId: number,
-      amount: string,
-      tokenAddress: string,
-      userAddress: string
-    ): Promise<void> {
-      const amountNum = parseFloat(amount);
-  
-      for (const source of sourceChains) {
-        if (parseFloat(source.formatted) >= amountNum) {
-          try {
-            const amountInWei = parseUnits(amount, this.USDC_DECIMALS).toString();
-            
-            const quote = await this.bungeeService.getQuote({
-              fromChainId: source.chainId,
-              toChainId: targetChainId,
-              fromTokenAddress: CHAIN_CONFIG[source.chainId as keyof typeof CHAIN_CONFIG].usdc,
-              toTokenAddress: CHAIN_CONFIG[targetChainId as keyof typeof CHAIN_CONFIG].usdc,
-              fromAmount: amountInWei,
-              userAddress
+        try {
+            console.log('\n🔍 Starting route optimization...');
+
+            // Get all balances first
+            const balances = await this.balanceService.getAllBalances(userAddress);
+            console.log('Available balances:', balances);
+
+            const targetChainId = parseInt(targetChain);
+            const requiredAmountNum = parseFloat(requiredAmount);
+
+            // Get target chain balance
+            const targetBalance = balances.balances.find(b => b.chainId === targetChainId);
+            const targetBalanceNum = targetBalance ? parseFloat(targetBalance.formatted) : 0;
+
+            console.log('Balance analysis:', {
+                required: requiredAmountNum,
+                availableOnTarget: targetBalanceNum,
+                needToBridge: Math.max(0, requiredAmountNum - targetBalanceNum)
             });
-  
-            if (quote.success && quote.result.routes.length > 0) {
-              const bestRoute = quote.result.routes[0];
-              
-              routes.push({
-                steps: [{
-                  fromChain: source.chainName,
-                  toChain: targetChainId.toString(),
-                  amount: amount,
-                  fee: formatUnits(bestRoute.totalGasFeesInUsd, this.USDC_DECIMALS),
-                  estimatedTime: bestRoute.estimatedTimeInSeconds,
-                  protocol: bestRoute.userTxs[0]?.steps?.[0]?.protocol || 'unknown'
-                }],
-                totalFee: formatUnits(bestRoute.totalGasFeesInUsd, this.USDC_DECIMALS),
-                totalTime: bestRoute.estimatedTimeInSeconds,
-                totalAmount: amount,
-                sourceChains: [source.chainName]
-              });
+
+            // No need to bridge if target chain has enough balance
+            const needToBridge = Math.max(0, requiredAmountNum - targetBalanceNum);
+            if (needToBridge === 0) {
+                return {
+                    success: true,
+                    routes: [{
+                        steps: [{
+                            fromChain: targetBalance?.chainName || targetChain,
+                            toChain: targetChain,
+                            amount: requiredAmount,
+                            fee: "0",
+                            estimatedTime: 0,
+                            protocol: "local"
+                        }],
+                        totalFee: "0",
+                        totalTime: 0,
+                        totalAmount: requiredAmount,
+                        sourceChains: [targetBalance?.chainName || targetChain]
+                    }],
+                    targetChain,
+                    requestedAmount: requiredAmount,
+                    timestamp: Date.now()
+                };
             }
-          } catch (error) {
-            console.error(`Error getting quote from ${source.chainName}:`, error);
-          }
-        }
-      }
-    }
-  
-    private async findMultiChainRoutes(
-      routes: OptimizedRoute[],
-      sourceChains: TokenBalance[],
-      targetChainId: number,
-      amount: string,
-      tokenAddress: string,
-      userAddress: string
-    ): Promise<void> {
-      const amountNum = parseFloat(amount);
-  
-      // Try different combinations of chains
-      for (let i = 2; i <= this.MAX_SPLITS; i++) {
-        const combinations = this.getCombinations(sourceChains, i);
-  
-        for (const combo of combinations) {
-          const totalAvailable = combo.reduce(
-            (sum, chain) => sum + parseFloat(chain.formatted),
-            0
-          );
-  
-          if (totalAvailable >= amountNum) {
-            const route = await this.createMultiChainRoute(
-              combo,
-              targetChainId,
-              amountNum,
-              tokenAddress,
-              userAddress
+
+            // Get all possible routes
+            const routes = await this.findRoutes(
+                targetChainId,
+                needToBridge.toString(),
+                tokenAddress,
+                userAddress,
+                balances.balances
             );
-  
-            if (route) routes.push(route);
-          }
+
+            console.log(`Found ${routes.length} possible routes for bridging ${needToBridge} USDC`);
+
+            return {
+                success: true,
+                routes: routes.slice(0, this.MAX_ROUTES),
+                targetChain,
+                requestedAmount: requiredAmount,
+                timestamp: Date.now()
+            };
+
+        } catch (error) {
+            console.error('Route optimization failed:', error);
+            throw error;
         }
-      }
     }
-  
-    private async createMultiChainRoute(
-      sourceChains: TokenBalance[],
-      targetChainId: number,
-      totalAmount: number,
-      tokenAddress: string,
-      userAddress: string
-    ): Promise<OptimizedRoute | null> {
-      try {
-        const steps: RouteStep[] = [];
-        let remainingAmount = totalAmount;
-        let totalFee = 0;
-        let maxTime = 0;
-  
-        // Try to source from each chain
-        for (const source of sourceChains) {
-          if (remainingAmount <= 0) break;
-  
-          const amountFromChain = Math.min(
-            parseFloat(source.formatted),
-            remainingAmount
-          );
-  
-          const amountInWei = parseUnits(
-            amountFromChain.toString(),
-            this.USDC_DECIMALS
-          ).toString();
-  
-          try {
-            const quote = await this.bungeeService.getQuote({
-              fromChainId: source.chainId,
-              toChainId: targetChainId,
-              fromTokenAddress: CHAIN_CONFIG[source.chainId as keyof typeof CHAIN_CONFIG].usdc,
-              toTokenAddress: CHAIN_CONFIG[targetChainId as keyof typeof CHAIN_CONFIG].usdc,
-              fromAmount: amountInWei,
-              userAddress
+
+    private readonly BRIDGE_FEES: Record<number, number> = {
+        42161: 1.0,  // Arbitrum => Polygon: 1 USDC
+        8453: 0.5,   // Base => Polygon: 0.5 USDC
+        100: 0.1,    // Gnosis => Polygon: 0.1 USDC
+        81457: 0.2   // Blast => Polygon: 0.2 USDC
+    };
+
+    private async findRoutes(
+        targetChainId: number,
+        amount: string,
+        tokenAddress: string,
+        userAddress: string,
+        balances: TokenBalance[]
+    ): Promise<OptimizedRoute[]> {
+        console.log('\n📊 Finding routes for', amount, 'USDC');
+        const routes: OptimizedRoute[] = [];
+        const amountNeeded = parseFloat(amount);
+
+        // Get valid source chains
+        const sourceChains = balances.filter(
+            b => b.chainId !== targetChainId && parseFloat(b.formatted) > 0
+        );
+        console.log('Available source chains:',
+            sourceChains.map(c => `${c.chainName}: ${c.formatted} USDC`)
+        );
+
+        // Step 1: Try most efficient single chain route
+        const baseRoute = await this.findBestSingleChainRoute(
+            sourceChains,
+            targetChainId,
+            amountNeeded
+        );
+        if (baseRoute) {
+            console.log('Found single chain route:', {
+                chain: baseRoute.sourceChains[0],
+                fee: baseRoute.totalFee
             });
-  
-            if (quote.success && quote.result.routes.length > 0) {
-              const bestRoute = quote.result.routes[0];
-              const fee = parseFloat(
-                formatUnits(bestRoute.totalGasFeesInUsd, this.USDC_DECIMALS)
-              );
-  
-              steps.push({
-                fromChain: source.chainName,
-                toChain: targetChainId.toString(),
-                amount: amountFromChain.toString(),
-                fee: fee.toString(),
-                estimatedTime: bestRoute.estimatedTimeInSeconds,
-                protocol: bestRoute.userTxs[0]?.steps?.[0]?.protocol || 'unknown'
-              });
-  
-              totalFee += fee;
-              maxTime = Math.max(maxTime, bestRoute.estimatedTimeInSeconds);
-              remainingAmount -= amountFromChain;
+            routes.push(baseRoute);
+        }
+
+        // Step 2: Try to find a more efficient multi-chain route
+        const multiChainRoute = await this.findOptimalMultiChainRoute(
+            sourceChains,
+            targetChainId,
+            amountNeeded
+        );
+        if (multiChainRoute && parseFloat(multiChainRoute.totalFee) < parseFloat(baseRoute?.totalFee || '999')) {
+            console.log('Found better multi-chain route:', {
+                chains: multiChainRoute.sourceChains,
+                fee: multiChainRoute.totalFee
+            });
+            routes.unshift(multiChainRoute); // Put better route first
+        }
+
+        return routes;
+    }
+
+    private async findBestSingleChainRoute(
+        sourceChains: TokenBalance[],
+        targetChainId: number,
+        amount: number
+    ): Promise<OptimizedRoute | null> {
+        let bestRoute: OptimizedRoute | null = null;
+        let lowestFee = 999;
+
+        for (const chain of sourceChains) {
+            if (parseFloat(chain.formatted) >= amount) {
+                const fee = this.BRIDGE_FEES[chain.chainId] || 999;
+                if (fee < lowestFee) {
+                    bestRoute = {
+                        steps: [{
+                            fromChain: chain.chainName,
+                            toChain: targetChainId.toString(),
+                            amount: amount.toString(),
+                            fee: fee.toString(),
+                            estimatedTime: 300,
+                            protocol: 'socket'
+                        }],
+                        totalFee: fee.toString(),
+                        totalTime: 300,
+                        totalAmount: amount.toString(),
+                        sourceChains: [chain.chainName]
+                    };
+                    lowestFee = fee;
+                }
             }
-          } catch (error) {
-            console.error(`Error getting quote from ${source.chainName}:`, error);
-          }
         }
-  
-        if (steps.length > 0 && remainingAmount <= 0) {
-          return {
-            steps,
-            totalFee: totalFee.toString(),
-            totalTime: maxTime,
-            totalAmount: totalAmount.toString(),
-            sourceChains: sourceChains.map(s => s.chainName)
-          };
+
+        return bestRoute;
+    }
+
+    private async findOptimalMultiChainRoute(
+        sourceChains: TokenBalance[],
+        targetChainId: number,
+        totalAmount: number
+    ): Promise<OptimizedRoute | null> {
+        // Sort chains by fee (cheapest first)
+        const sortedChains = [...sourceChains].sort(
+            (a, b) => (this.BRIDGE_FEES[a.chainId] || 999) - (this.BRIDGE_FEES[b.chainId] || 999)
+        );
+
+        let bestRoute: OptimizedRoute | null = null;
+        let lowestTotalFee = 999;
+
+        // Try combinations of the cheapest chains
+        for (let i = 0; i < sortedChains.length - 1; i++) {
+            for (let j = i + 1; j < sortedChains.length; j++) {
+                const chain1 = sortedChains[i];
+                const chain2 = sortedChains[j];
+
+                const amount1 = Math.min(parseFloat(chain1.formatted), totalAmount);
+                const remainingNeeded = totalAmount - amount1;
+
+                if (remainingNeeded <= parseFloat(chain2.formatted)) {
+                    const totalFee =
+                        this.BRIDGE_FEES[chain1.chainId] +
+                        this.BRIDGE_FEES[chain2.chainId];
+
+                    if (totalFee < lowestTotalFee) {
+                        bestRoute = {
+                            steps: [
+                                {
+                                    fromChain: chain1.chainName,
+                                    toChain: targetChainId.toString(),
+                                    amount: amount1.toString(),
+                                    fee: this.BRIDGE_FEES[chain1.chainId].toString(),
+                                    estimatedTime: 300,
+                                    protocol: 'socket'
+                                },
+                                {
+                                    fromChain: chain2.chainName,
+                                    toChain: targetChainId.toString(),
+                                    amount: remainingNeeded.toString(),
+                                    fee: this.BRIDGE_FEES[chain2.chainId].toString(),
+                                    estimatedTime: 300,
+                                    protocol: 'socket'
+                                }
+                            ],
+                            totalFee: totalFee.toString(),
+                            totalTime: 300,
+                            totalAmount: totalAmount.toString(),
+                            sourceChains: [chain1.chainName, chain2.chainName]
+                        };
+                        lowestTotalFee = totalFee;
+                    }
+                }
+            }
         }
-  
-        return null;
-      } catch (error) {
-        console.error('Error creating multi-chain route:', error);
-        return null;
-      }
+
+        return bestRoute;
     }
-  
-    private getCombinations<T>(arr: T[], n: number): T[][] {
-      if (n === 1) return arr.map(v => [v]);
-      
-      const combinations: T[][] = [];
-      for (let i = 0; i <= arr.length - n; i++) {
-        const head = arr[i];
-        const subcombinations = this.getCombinations(arr.slice(i + 1), n - 1);
-        subcombinations.forEach(subcomb => combinations.push([head, ...subcomb]));
-      }
-      
-      return combinations;
-    }
-  
-    private sortRoutes(routes: OptimizedRoute[]): OptimizedRoute[] {
-      return [...routes].sort((a, b) => {
-        const aScore = this.calculateRouteScore(a);
-        const bScore = this.calculateRouteScore(b);
-        return aScore - bScore;
-      });
-    }
-  
-    private calculateRouteScore(route: OptimizedRoute): number {
-      const feeWeight = 0.7;
-      const timeWeight = 0.3;
-  
-      const feeScore = parseFloat(route.totalFee);
-      const timeScore = route.totalTime / 60; // Convert to minutes
-  
-      return (feeScore * feeWeight) + (timeScore * timeWeight);
-    }
-  }
-  
+}
