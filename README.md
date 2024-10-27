@@ -26,7 +26,7 @@ cd bridge-route-optimizer
 
 2. Install dependencies:
 ```bash
-bun install
+npx bun install
 ```
 
 3. Set up environment variables:
@@ -67,7 +67,7 @@ bun dev
 bun start
 ```
 
-The server will start at `http://localhost:3000` (or the port specified in your .env file).
+The server will start at `http://localhost:3001` (or the port specified in your .env file).
 
 ## API Endpoints
 
