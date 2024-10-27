@@ -10,18 +10,19 @@ const API_BASE_URL = 'http://localhost:3001';
 const CHAINS = {
   POLYGON: 137,
   ARBITRUM: 42161,
-  BASE: 8453
+  BASE: 8453,
+  GNOSIS: 100,
+  BLAST: 81457
 };
 
 // USDC addresses
 const USDC_ADDRESSES = {
-  [CHAINS.POLYGON]: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',  // Polygon USDC
-  [CHAINS.ARBITRUM]: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8', // Arbitrum USDC
-  [CHAINS.BASE]: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'     // Base USDC
+  [CHAINS.POLYGON]: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+  [CHAINS.ARBITRUM]: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
+  [CHAINS.BASE]: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  [CHAINS.GNOSIS]: '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83',
+  [CHAINS.BLAST]: '0x4300000000000000000000000000000000000003'
 };
-
-// Test wallet - this is just for testing, no real funds needed
-const TEST_WALLET = "0x742d35Cc6634C0532925a3b844Bc454e4438f44e";
 
 async function testScenarios() {
   try {
@@ -30,52 +31,39 @@ async function testScenarios() {
     const health = await axios.get(`${API_BASE_URL}/health`);
     console.log('Health Status:', health.data);
 
-    // Scenario 1: Simple route needed
-    // Current balances:
-    // - Polygon: 50 USDC
-    // - Arbitrum: 100 USDC
-    // - Base: 80 USDC
-    // Need: 100 USDC on Polygon (need to bridge 50 more)
-    console.log('\n🔄 Testing Scenario 1: Need 50 more USDC on Polygon');
+    // Scenario 1: Need 50 USDC (local: 50, need to bridge: 50)
+    console.log('\n🔄 Testing Scenario 1: Bridge from Base to Polygon');
+    console.log('Current balances:');
+    console.log('- Polygon: 50 USDC (local)');
+    console.log('- Arbitrum: 100 USDC (fee: 1.0 USDC)');
+    console.log('- Base: 80 USDC (fee: 0.5 USDC)');
+    console.log('Need: 100 USDC total (bridging 50)');
+
     const scenario1 = await axios.post(`${API_BASE_URL}/api/route`, {
       targetChain: CHAINS.POLYGON.toString(),
-      amount: "100",      // Need 100 total, have 50, should bridge 50
+      amount: "100",  // Total amount needed
       tokenAddress: USDC_ADDRESSES[CHAINS.POLYGON],
-      userAddress: TEST_WALLET
+      userAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
     });
     console.log('Scenario 1 Result:', JSON.stringify(scenario1.data, null, 2));
 
-    // Scenario 2: Multi-chain route might be better
-    // Current balances same as above, but need more USDC
-    // Should consider combining from multiple chains if fees are better
-    console.log('\n🔄 Testing Scenario 2: Complex routing scenario');
+    // Scenario 2: Complex multi-chain route
+    console.log('\n🔄 Testing Scenario 2: Optimal multi-chain route');
+    console.log('Current balances:');
+    console.log('- Polygon: 50 USDC (local)');
+    console.log('- Arbitrum: 100 USDC (fee: 1.0 USDC)');
+    console.log('- Base: 80 USDC (fee: 0.5 USDC)');
+    console.log('- Gnosis: 25 USDC (fee: 0.1 USDC)');
+    console.log('- Blast: 30 USDC (fee: 0.2 USDC)');
+    console.log('Need: 100 USDC total (bridging 50)');
+
     const scenario2 = await axios.post(`${API_BASE_URL}/api/route`, {
       targetChain: CHAINS.POLYGON.toString(),
-      amount: "150",      // Need 150 total, have 50, should bridge 100
+      amount: "100",  // Total amount needed
       tokenAddress: USDC_ADDRESSES[CHAINS.POLYGON],
-      userAddress: TEST_WALLET
+      userAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
     });
     console.log('Scenario 2 Result:', JSON.stringify(scenario2.data, null, 2));
-
-    // Scenario 3: Insufficient funds scenario
-    console.log('\n🔄 Testing Scenario 3: Insufficient funds scenario');
-    const scenario3 = await axios.post(`${API_BASE_URL}/api/route`, {
-      targetChain: CHAINS.POLYGON.toString(),
-      amount: "300",      // Need 300 total (should fail - not enough funds)
-      tokenAddress: USDC_ADDRESSES[CHAINS.POLYGON],
-      userAddress: TEST_WALLET
-    });
-    console.log('Scenario 3 Result:', JSON.stringify(scenario3.data, null, 2));
-
-    // Scenario 4: No bridging needed (has enough on target chain)
-    console.log('\n🔄 Testing Scenario 4: No bridging needed');
-    const scenario4 = await axios.post(`${API_BASE_URL}/api/route`, {
-      targetChain: CHAINS.POLYGON.toString(),
-      amount: "40",       // Only need 40 (already has 50 on Polygon)
-      tokenAddress: USDC_ADDRESSES[CHAINS.POLYGON],
-      userAddress: TEST_WALLET
-    });
-    console.log('Scenario 4 Result:', JSON.stringify(scenario4.data, null, 2));
 
   } catch (error) {
     if (axios.isAxiosError(error)) {
@@ -90,19 +78,9 @@ async function testScenarios() {
   }
 }
 
-// Add color to console output
-const colors = {
-  reset: "\x1b[0m",
-  bright: "\x1b[1m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  red: "\x1b[31m",
-  blue: "\x1b[34m"
-};
-
-console.log(`${colors.bright}${colors.blue}🚀 Starting API Tests...${colors.reset}`);
+console.log('🚀 Starting API Tests...');
 testScenarios().then(() => {
-  console.log(`${colors.bright}${colors.green}\n✅ Tests completed${colors.reset}`);
+  console.log('\n✅ Tests completed');
 }).catch((error) => {
-  console.error(`${colors.bright}${colors.red}\n❌ Tests failed:${colors.reset}`, error);
+  console.error('\n❌ Tests failed:', error);
 });

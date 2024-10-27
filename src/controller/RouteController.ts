@@ -49,7 +49,6 @@ export class RouteController {
       const routes = await this.routeOptimizer.findOptimalRoutes(
         params.targetChain,
         params.amount,
-        params.tokenAddress,
         params.userAddress
       );
 

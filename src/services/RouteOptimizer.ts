@@ -14,26 +14,18 @@ export class RouteOptimizer {
         private balanceService: any,
         private cacheService: any) { }
 
-    // src/services/RouteOptimizer.ts
-
     async findOptimalRoutes(
         targetChain: string,
         requiredAmount: string,
-        tokenAddress: string,
         userAddress: string
     ): Promise<RouteOptimization> {
         try {
             console.log('\n🔍 Starting route optimization...');
 
-            // Get all balances first
             const balances = await this.balanceService.getAllBalances(userAddress);
-            console.log('Available balances:', balances);
-
             const targetChainId = parseInt(targetChain);
             const requiredAmountNum = parseFloat(requiredAmount);
-
-            // Get target chain balance
-            const targetBalance = balances.balances.find(b => b.chainId === targetChainId);
+            const targetBalance = balances.balances.find((b: TokenBalance) => b.chainId === targetChainId);
             const targetBalanceNum = targetBalance ? parseFloat(targetBalance.formatted) : 0;
 
             console.log('Balance analysis:', {
@@ -42,15 +34,16 @@ export class RouteOptimizer {
                 needToBridge: Math.max(0, requiredAmountNum - targetBalanceNum)
             });
 
-            // No need to bridge if target chain has enough balance
             const needToBridge = Math.max(0, requiredAmountNum - targetBalanceNum);
+
+            // If we have exact amount needed locally
             if (needToBridge === 0) {
                 return {
                     success: true,
                     routes: [{
                         steps: [{
-                            fromChain: targetBalance?.chainName || targetChain,
-                            toChain: targetChain,
+                            fromChain: targetChain,  
+                            toChain: targetChain, 
                             amount: requiredAmount,
                             fee: "0",
                             estimatedTime: 0,
@@ -59,7 +52,7 @@ export class RouteOptimizer {
                         totalFee: "0",
                         totalTime: 0,
                         totalAmount: requiredAmount,
-                        sourceChains: [targetBalance?.chainName || targetChain]
+                        sourceChains: [targetChain]
                     }],
                     targetChain,
                     requestedAmount: requiredAmount,
@@ -67,20 +60,58 @@ export class RouteOptimizer {
                 };
             }
 
-            // Get all possible routes
-            const routes = await this.findRoutes(
+            // Get routes for the amount we need to bridge
+            const bridgeRoutes = await this.findRoutes(
                 targetChainId,
                 needToBridge.toString(),
-                tokenAddress,
-                userAddress,
                 balances.balances
             );
 
-            console.log(`Found ${routes.length} possible routes for bridging ${needToBridge} USDC`);
+            // Add local balance step to each route if we have local balance
+            const combinedRoutes = bridgeRoutes.map(route => ({
+                steps: [
+                    ...(targetBalanceNum > 0 ? [{
+                        fromChain: targetChain,
+                        toChain: targetChain,
+                        amount: targetBalanceNum.toString(),
+                        fee: "0",
+                        estimatedTime: 0,
+                        protocol: "local"
+                    }] : []),
+                    ...route.steps
+                ],
+                totalFee: route.totalFee,
+                totalTime: route.totalTime,
+                totalAmount: requiredAmount,
+                sourceChains: [
+                    ...(targetBalanceNum > 0 ? [targetChain] : []),
+                    ...route.sourceChains
+                ],
+                isOptimal: false,
+                explanation: ""
+            }));
+
+            // Sort routes by total fee and mark the optimal one
+            const sortedRoutes = combinedRoutes
+                .sort((a, b) => parseFloat(a.totalFee) - parseFloat(b.totalFee))
+                .map((route, index) => ({
+                    ...route,
+                    isOptimal: index === 0,
+                    explanation: this.generateRouteExplanation(route)
+                }));
+
+            console.log('\n📊 Route Summary:');
+            sortedRoutes.forEach((route, index) => {
+                console.log(`\n${index === 0 ? '🏆 BEST ROUTE' : 'Alternative Route'} (Total Fee: ${route.totalFee} USDC):`);
+                console.log(route.explanation);
+                console.log('Steps:', route.steps.map(step =>
+                    `${step.protocol === 'local' ? '📍' : '🌉'} ${step.fromChain} -> ${step.toChain}: ${step.amount} USDC ${step.fee === '0' ? '(no fee)' : `(fee: ${step.fee} USDC)`}`
+                ));
+            });
 
             return {
                 success: true,
-                routes: routes.slice(0, this.MAX_ROUTES),
+                routes: sortedRoutes.slice(0, this.MAX_ROUTES),
                 targetChain,
                 requestedAmount: requiredAmount,
                 timestamp: Date.now()
@@ -90,6 +121,28 @@ export class RouteOptimizer {
             console.error('Route optimization failed:', error);
             throw error;
         }
+    }
+
+    private generateRouteExplanation(route: OptimizedRoute): string {
+        const localStep = route.steps.find(s => s.protocol === 'local');
+        const bridgeSteps = route.steps.filter(s => s.protocol !== 'local');
+
+        let explanation = '';
+
+        if (localStep) {
+            explanation += `Using ${localStep.amount} USDC already available on ${localStep.toChain}. `;
+        }
+
+        if (bridgeSteps.length === 1) {
+            explanation += `Bridging remaining ${bridgeSteps[0].amount} USDC from ${bridgeSteps[0].fromChain} with a fee of ${bridgeSteps[0].fee} USDC. `;
+        } else if (bridgeSteps.length > 1) {
+            explanation += `Split bridging: ${bridgeSteps.map(step =>
+                `${step.amount} USDC from ${step.fromChain} (fee: ${step.fee} USDC)`
+            ).join(' + ')}. `;
+        }
+
+        explanation += `Total fee: ${route.totalFee} USDC`;
+        return explanation;
     }
 
     private readonly BRIDGE_FEES: Record<number, number> = {
@@ -102,8 +155,6 @@ export class RouteOptimizer {
     private async findRoutes(
         targetChainId: number,
         amount: string,
-        tokenAddress: string,
-        userAddress: string,
         balances: TokenBalance[]
     ): Promise<OptimizedRoute[]> {
         console.log('\n📊 Finding routes for', amount, 'USDC');
@@ -143,7 +194,7 @@ export class RouteOptimizer {
                 chains: multiChainRoute.sourceChains,
                 fee: multiChainRoute.totalFee
             });
-            routes.unshift(multiChainRoute); // Put better route first
+            routes.unshift(multiChainRoute);
         }
 
         return routes;
