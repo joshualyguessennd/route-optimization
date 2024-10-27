@@ -60,10 +60,10 @@ redis-server
 2. Run the application:
 ```bash
 # Development mode with hot reload
-bun dev
+npx bun dev
 
 # Production mode
-bun start
+npx bun start
 ```
 
 The server will start at `http://localhost:3001` (or the port specified in your .env file).
