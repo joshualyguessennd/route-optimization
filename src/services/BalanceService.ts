@@ -64,8 +64,8 @@ export class BalanceService {
     //         balances.push({
     //             chainId,
     //             chainName: chain.name,
-    //             balance: balance,         // Modify as needed for actual balance values
-    //             formatted: balance, // Modify as needed for formatted balance
+    //             balance: balance,        
+    //             formatted: balance,
     //         });
     //     }
     
