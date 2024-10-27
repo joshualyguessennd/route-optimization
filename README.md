@@ -126,7 +126,7 @@ Response:
 
 Run the test scenarios:
 ```bash
-bun run tests/scenarios.ts
+npx bun run tests/scenarios.ts
 ```
 
 Note: Currently using mock balances for testing purposes. To implement real balance fetching:
