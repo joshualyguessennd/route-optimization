@@ -12,7 +12,6 @@ This application finds the most efficient routes for bridging tokens (USDC) acro
 
 ## Prerequisites
 
-- [Bun](https://bun.sh/) installed
 - [Redis](https://redis.io/) server running
 - [Socket/Bungee API Key](https://docs.socket.tech/)
 
