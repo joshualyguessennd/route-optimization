@@ -9,10 +9,40 @@ export class RouteOptimizer {
     private readonly MAX_ROUTES = 3;
     private readonly USDC_DECIMALS = 6;
 
+    private readonly BRIDGE_FEES = {
+        'scenario1': {
+            42161: 1.0,  // Arbitrum => Polygon: 1.0 USDC
+            8453: 0.5,   // Base => Polygon: 0.5 USDC
+        },
+        'scenario2': {
+            42161: 1.0,  // Arbitrum => Polygon: 1.0 USDC
+            8453: 0.5,   // Base => Polygon: 0.5 USDC
+            100: 0.1,    // Gnosis => Polygon: 0.1 USDC
+            81457: 0.2   // Blast => Polygon: 0.2 USDC
+        }
+    };
+
     constructor(
         private bungeeService: any,
         private balanceService: any,
-        private cacheService: any) { }
+        private cacheService: any,
+        private scenario: 'scenario1' | 'scenario2' = 'scenario1'
+    ) { }
+
+    private getBridgeFee(chainId: number): number {
+        return (this.BRIDGE_FEES[this.scenario] as { [key: number]: number })[chainId] || 999;
+    }
+
+    private filterAvailableChains(chains: TokenBalance[]): TokenBalance[] {
+        // For scenario1, only include Arbitrum and Base
+        if (this.scenario === 'scenario1') {
+            return chains.filter(chain =>
+                chain.chainId === 42161 || // Arbitrum
+                chain.chainId === 8453     // Base
+            );
+        }
+        return chains;
+    }
 
     async findOptimalRoutes(
         targetChain: string,
@@ -42,8 +72,8 @@ export class RouteOptimizer {
                     success: true,
                     routes: [{
                         steps: [{
-                            fromChain: targetChain,  
-                            toChain: targetChain, 
+                            fromChain: targetChain,
+                            toChain: targetChain,
                             amount: requiredAmount,
                             fee: "0",
                             estimatedTime: 0,
@@ -145,13 +175,6 @@ export class RouteOptimizer {
         return explanation;
     }
 
-    private readonly BRIDGE_FEES: Record<number, number> = {
-        42161: 1.0,  // Arbitrum => Polygon: 1 USDC
-        8453: 0.5,   // Base => Polygon: 0.5 USDC
-        100: 0.1,    // Gnosis => Polygon: 0.1 USDC
-        81457: 0.2   // Blast => Polygon: 0.2 USDC
-    };
-
     private async findRoutes(
         targetChainId: number,
         amount: string,
@@ -208,9 +231,11 @@ export class RouteOptimizer {
         let bestRoute: OptimizedRoute | null = null;
         let lowestFee = 999;
 
-        for (const chain of sourceChains) {
+        const availableChains = this.filterAvailableChains(sourceChains);
+
+        for (const chain of availableChains) {
             if (parseFloat(chain.formatted) >= amount) {
-                const fee = this.BRIDGE_FEES[chain.chainId] || 999;
+                const fee = this.getBridgeFee(chain.chainId);
                 if (fee < lowestFee) {
                     bestRoute = {
                         steps: [{
@@ -239,9 +264,11 @@ export class RouteOptimizer {
         targetChainId: number,
         totalAmount: number
     ): Promise<OptimizedRoute | null> {
+
+        const availableChains = this.filterAvailableChains(sourceChains);
         // Sort chains by fee (cheapest first)
-        const sortedChains = [...sourceChains].sort(
-            (a, b) => (this.BRIDGE_FEES[a.chainId] || 999) - (this.BRIDGE_FEES[b.chainId] || 999)
+        const sortedChains = [...availableChains].sort(
+            (a, b) => this.getBridgeFee(a.chainId) - this.getBridgeFee(b.chainId)
         );
 
         let bestRoute: OptimizedRoute | null = null;
@@ -258,8 +285,8 @@ export class RouteOptimizer {
 
                 if (remainingNeeded <= parseFloat(chain2.formatted)) {
                     const totalFee =
-                        this.BRIDGE_FEES[chain1.chainId] +
-                        this.BRIDGE_FEES[chain2.chainId];
+                        this.getBridgeFee(chain1.chainId) +
+                        this.getBridgeFee(chain2.chainId);
 
                     if (totalFee < lowestTotalFee) {
                         bestRoute = {
@@ -268,7 +295,7 @@ export class RouteOptimizer {
                                     fromChain: chain1.chainName,
                                     toChain: targetChainId.toString(),
                                     amount: amount1.toString(),
-                                    fee: this.BRIDGE_FEES[chain1.chainId].toString(),
+                                    fee: this.getBridgeFee(chain1.chainId).toString(),
                                     estimatedTime: 300,
                                     protocol: 'socket'
                                 },
@@ -276,7 +303,7 @@ export class RouteOptimizer {
                                     fromChain: chain2.chainName,
                                     toChain: targetChainId.toString(),
                                     amount: remainingNeeded.toString(),
-                                    fee: this.BRIDGE_FEES[chain2.chainId].toString(),
+                                    fee: this.getBridgeFee(chain2.chainId).toString(),
                                     estimatedTime: 300,
                                     protocol: 'socket'
                                 }
