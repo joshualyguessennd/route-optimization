@@ -20,7 +20,7 @@ This application finds the most efficient routes for bridging tokens (USDC) acro
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd bridge-route-optimizer
+cd route-optimization
 ```
 
 2. Install dependencies:
