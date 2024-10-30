@@ -258,13 +258,12 @@ export class RouteOptimizer {
 
         return bestRoute;
     }
-
+    
     private async findOptimalMultiChainRoute(
         sourceChains: TokenBalance[],
         targetChainId: number,
         totalAmount: number
     ): Promise<OptimizedRoute | null> {
-
         const availableChains = this.filterAvailableChains(sourceChains);
         // Sort chains by fee (cheapest first)
         const sortedChains = [...availableChains].sort(
@@ -274,48 +273,90 @@ export class RouteOptimizer {
         let bestRoute: OptimizedRoute | null = null;
         let lowestTotalFee = 999;
 
-        // Try combinations of the cheapest chains
-        for (let i = 0; i < sortedChains.length - 1; i++) {
-            for (let j = i + 1; j < sortedChains.length; j++) {
-                const chain1 = sortedChains[i];
-                const chain2 = sortedChains[j];
+        // Recursive function to generate all possible combinations
+        const generateCombinations = (
+            chains: TokenBalance[],
+            targetAmount: number,
+            currentCombo: TokenBalance[] = [],
+            startIndex: number = 0
+        ): TokenBalance[][] => {
+            const combinations: TokenBalance[][] = [];
 
-                const amount1 = Math.min(parseFloat(chain1.formatted), totalAmount);
-                const remainingNeeded = totalAmount - amount1;
+            // Check if current combination can satisfy the amount
+            const totalAvailable = currentCombo.reduce(
+                (sum, chain) => sum + parseFloat(chain.formatted),
+                0
+            );
 
-                if (remainingNeeded <= parseFloat(chain2.formatted)) {
-                    const totalFee =
-                        this.getBridgeFee(chain1.chainId) +
-                        this.getBridgeFee(chain2.chainId);
+            if (totalAvailable >= targetAmount && currentCombo.length >= 2) {
+                combinations.push([...currentCombo]);
+            }
 
-                    if (totalFee < lowestTotalFee) {
-                        bestRoute = {
-                            steps: [
-                                {
-                                    fromChain: chain1.chainName,
-                                    toChain: targetChainId.toString(),
-                                    amount: amount1.toString(),
-                                    fee: this.getBridgeFee(chain1.chainId).toString(),
-                                    estimatedTime: 300,
-                                    protocol: 'socket'
-                                },
-                                {
-                                    fromChain: chain2.chainName,
-                                    toChain: targetChainId.toString(),
-                                    amount: remainingNeeded.toString(),
-                                    fee: this.getBridgeFee(chain2.chainId).toString(),
-                                    estimatedTime: 300,
-                                    protocol: 'socket'
-                                }
-                            ],
-                            totalFee: totalFee.toString(),
-                            totalTime: 300,
-                            totalAmount: totalAmount.toString(),
-                            sourceChains: [chain1.chainName, chain2.chainName]
-                        };
-                        lowestTotalFee = totalFee;
-                    }
-                }
+            // Don't exceed MAX_SPLITS chains per route
+            if (currentCombo.length >= this.MAX_SPLITS) {
+                return combinations;
+            }
+
+            // Generate combinations
+            for (let i = startIndex; i < chains.length; i++) {
+                const newCombo = [...currentCombo, chains[i]];
+                const combos = generateCombinations(chains, targetAmount, newCombo, i + 1);
+                combinations.push(...combos);
+            }
+
+            return combinations;
+        };
+
+        // Get all valid combinations of chains
+        const allCombinations = generateCombinations(sortedChains, totalAmount);
+
+        // Evaluate each combination
+        for (const chainCombo of allCombinations) {
+            let remainingAmount = totalAmount;
+            let totalFee = 0;
+            const steps: any[] = [];
+
+            // Calculate optimal distribution of amounts across chains
+            for (let i = 0; i < chainCombo.length; i++) {
+                const chain = chainCombo[i];
+                const isLastChain = i === chainCombo.length - 1;
+                const availableAmount = parseFloat(chain.formatted);
+
+                // For the last chain, use all remaining amount if possible
+                const amountToUse = isLastChain
+                    ? remainingAmount
+                    : Math.min(
+                        availableAmount,
+                        remainingAmount / (chainCombo.length - i)
+                    );
+
+                if (amountToUse <= 0) break;
+
+                const fee = this.getBridgeFee(chain.chainId);
+                totalFee += fee;
+
+                steps.push({
+                    fromChain: chain.chainName,
+                    toChain: targetChainId.toString(),
+                    amount: amountToUse.toString(),
+                    fee: fee.toString(),
+                    estimatedTime: 300,
+                    protocol: 'socket'
+                });
+
+                remainingAmount -= amountToUse;
+            }
+
+            // Check if this combination is valid and better than current best
+            if (remainingAmount <= 0.000001 && totalFee < lowestTotalFee) {
+                bestRoute = {
+                    steps,
+                    totalFee: totalFee.toString(),
+                    totalTime: 300,
+                    totalAmount: totalAmount.toString(),
+                    sourceChains: chainCombo.map(chain => chain.chainName)
+                };
+                lowestTotalFee = totalFee;
             }
         }
 
